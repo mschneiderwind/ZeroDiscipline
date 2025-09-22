@@ -56,6 +56,5 @@ Icon
 # Distribution artifacts
 dist/
 
-# Configuration files (keep example, ignore actual config)
+# Configuration files
 config.json
-!config.json.example

@@ -39,7 +39,6 @@ dmg:
 	@mkdir -p dist/dmg-staging
 	@cp -R dist/ZeroDiscipline.app dist/dmg-staging/
 	@cp README.md dist/dmg-staging/
-	@cp config.json.example dist/dmg-staging/
 	@ln -s /Applications dist/dmg-staging/Applications
 	@rm -f dist/ZeroDiscipline.dmg
 	@hdiutil create -volname "Zero Discipline" \
