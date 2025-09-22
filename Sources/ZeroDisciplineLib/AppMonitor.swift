@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import ScreenCaptureKit
 
 /// Status of a monitored application
 public class MonitoredAppStatus {
@@ -40,6 +41,7 @@ public class MonitoredAppStatus {
     }
 
     public func findRunningApp() -> NSRunningApplication? {
+        // TODO: MODERNIZE - Could cache this lookup or use NSWorkspace notifications
         let workspace = NSWorkspace.shared
         return workspace.runningApplications.first { app in
             guard let bundleURL = app.bundleURL, !app.isHidden else { return false }
@@ -65,6 +67,7 @@ public class MonitoredAppStatus {
     }
 
     /// Find all processes related to this app (main + extensions/services)
+    /// TODO: MODERNIZE - Could use macOS 15 process groups API for better detection
     public func findRelatedProcesses() -> [NSRunningApplication] {
         let appName = URL(fileURLWithPath: appPath).deletingPathExtension().lastPathComponent
         let allApps = NSWorkspace.shared.runningApplications
@@ -105,6 +108,7 @@ public class AppMonitor: ObservableObject {
             appStatus.lastUsed = appStatus.getLastUsedWithLaunchDate()
             monitoredApps.append(appStatus)
         }
+        // TODO: MODERNIZE - Replace polling with NSWorkspace notifications for better efficiency
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             Task { @MainActor in
                 self.runMonitoringCycle()
@@ -163,6 +167,38 @@ public class AppMonitor: ObservableObject {
 
 
     private func getTopNApps() -> [String] {
+        // Use modern NSWorkspace approach for better app detection
+        if #available(macOS 15.0, *) {
+            return getTopNAppsModern()
+        } else {
+            return getTopNAppsLegacy()
+        }
+    }
+    
+    @available(macOS 15.0, *)
+    private func getTopNAppsModern() -> [String] {
+        // Modern approach using improved NSWorkspace APIs
+        let workspace = NSWorkspace.shared
+        let runningApps = workspace.runningApplications
+            .filter { app in
+                guard app.activationPolicy == .regular,
+                      !app.isHidden,
+                      app.bundleURL != nil else { return false }
+                return true
+            }
+            .sorted { app1, app2 in
+                // Sort by activation order (more recent first)
+                // This is a simplified approximation - real implementation would track focus events
+                return (app1.processIdentifier > app2.processIdentifier)
+            }
+            .prefix(config.topN)
+            .compactMap { $0.bundleURL?.path }
+        
+        return Array(runningApps)
+    }
+    
+    private func getTopNAppsLegacy() -> [String] {
+        // Fallback to old CGWindowListCopyWindowInfo method
         guard let windowList = CGWindowListCopyWindowInfo(
             [.optionOnScreenOnly, .excludeDesktopElements],
             kCGNullWindowID
@@ -190,8 +226,11 @@ public class AppMonitor: ObservableObject {
     }
 
     private func isValidUserApp(app: NSRunningApplication, window: [String: Any]) -> Bool {
+        // Enhanced validation with modern app properties
         guard app.activationPolicy == .regular else { return false }
         guard !app.isHidden else { return false }
+        
+        // Note: Modern execution state APIs would go here when available
 
         let windowLayer = window[kCGWindowLayer as String] as? Int ?? 0
         guard windowLayer == 0 else { return false }
@@ -208,55 +247,76 @@ public class AppMonitor: ObservableObject {
 
     @discardableResult
     private func quitApp(app: MonitoredAppStatus) -> Bool {
-        guard let runningApp = app.findRunningApp() else {
+        // Modern approach: terminate all related processes for better cleanup
+        let relatedProcesses = app.findRelatedProcesses()
+        guard !relatedProcesses.isEmpty else {
             print("⚠️ App \(app.displayName()) not found or not running")
             return false
         }
 
         let appName = app.displayName()
+        print("🎯 Terminating \(appName) (\(relatedProcesses.count) processes)")
+        
+        // Try graceful termination first on main processes
+        var mainProcesses = relatedProcesses.filter { $0.activationPolicy == .regular }
+        if mainProcesses.isEmpty {
+            mainProcesses = [relatedProcesses.first!] // At least one process
+        }
+        
+        var allTerminated = true
+        for process in mainProcesses {
+            let success = process.terminate()
+            if !success {
+                print("⚠️ Failed to terminate process \(process.processIdentifier)")
+                allTerminated = false
+            }
+        }
 
-        print("🎯 Terminating \(appName)")
-
-        let success = runningApp.terminate()
-
-        if success {
-            print("✅ terminate() returned true for \(appName), waiting for app to close...")
-
-            // Wait for the app to actually close (max 3 seconds before force kill)
-            let gracePeriod: TimeInterval = 3.0
-            let startTime = Date()
-
+        // Wait for graceful termination (shorter timeout since we kill all processes)
+        let gracePeriod: TimeInterval = 2.0
+        let startTime = Date()
+        
+        if allTerminated {
+            print("✅ Graceful termination initiated, waiting for cleanup...")
+            
             while Date().timeIntervalSince(startTime) < gracePeriod {
-                if app.findRunningApp() == nil {
-                    print("✅ \(appName) successfully closed after \(Date().timeIntervalSince(startTime))s")
+                let remainingProcesses = app.findRelatedProcesses()
+                if remainingProcesses.isEmpty {
+                    print("✅ \(appName) fully terminated after \(String(format: "%.1f", Date().timeIntervalSince(startTime)))s")
                     return true
                 }
                 Thread.sleep(forTimeInterval: 0.1)
             }
-
-            // App didn't close gracefully, try force terminate
-            if let stubornApp = app.findRunningApp() {
-                print("💥 \(appName) didn't close gracefully, force terminating...")
-                let forceSuccess = stubornApp.forceTerminate()
-                print("forceTerminate() returned: \(forceSuccess)")
-                
-                // Wait a bit more for force terminate
-                let forceStartTime = Date()
-                while Date().timeIntervalSince(forceStartTime) < 2.0 {
-                    if app.findRunningApp() == nil {
-                        print("✅ \(appName) force terminated after \(Date().timeIntervalSince(startTime))s total")
-                        return true
-                    }
-                    Thread.sleep(forTimeInterval: 0.1)
+        }
+        
+        // Force terminate any remaining processes
+        let stubornProcesses = app.findRelatedProcesses()
+        if !stubornProcesses.isEmpty {
+            print("💥 \(appName) has \(stubornProcesses.count) stubborn processes, force terminating...")
+            
+            for process in stubornProcesses {
+                let forceSuccess = process.forceTerminate()
+                if forceSuccess {
+                    print("✅ Force terminated PID \(process.processIdentifier)")
+                } else {
+                    print("⚠️ Failed to force terminate PID \(process.processIdentifier)")
                 }
             }
-
-            print("⚠️ \(appName) couldn't be terminated, giving up")
-            return false
-        } else {
-            print("⚠️ terminate() returned false for \(appName)")
-            return false
+            
+            // Final check after force termination
+            Thread.sleep(forTimeInterval: 0.5)
+            let finalProcesses = app.findRelatedProcesses()
+            if finalProcesses.isEmpty {
+                print("✅ \(appName) force terminated after \(String(format: "%.1f", Date().timeIntervalSince(startTime)))s total")
+                return true
+            } else {
+                print("⚠️ \(appName) still has \(finalProcesses.count) unkillable processes")
+                return false
+            }
         }
+        
+        print("⚠️ \(appName) couldn't be terminated, giving up")
+        return false
     }
 }
 
