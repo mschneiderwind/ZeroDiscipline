@@ -127,6 +127,7 @@ public class AppMonitor: ObservableObject {
     private let config: ZeroDisciplineConfig
     private var monitorTimer: Timer?
     private var lastLoggedTopN: String = ""
+    private var lastFrontmostApp: String?
 
     public init(config: ZeroDisciplineConfig) {
         self.config = config
@@ -147,6 +148,20 @@ public class AppMonitor: ObservableObject {
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             Task { @MainActor in
                 self.runMonitoringCycle()
+            }
+        }
+        
+        // Listen for app activation changes
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+               let bundlePath = app.bundleURL?.path {
+                Task { @MainActor in
+                    self?.lastFrontmostApp = bundlePath
+                }
             }
         }
     }
@@ -201,23 +216,36 @@ public class AppMonitor: ObservableObject {
 
 
     private func getTopNApps() -> [String] {
-        // Modern NSWorkspace approach - clean and simple
+        // Get frontmost app first
         let workspace = NSWorkspace.shared
-        let runningApps = workspace.runningApplications
+        var topApps: [String] = []
+        
+        // Add frontmost app first
+        if let frontmostApp = workspace.frontmostApplication,
+           frontmostApp.activationPolicy == .regular,
+           !frontmostApp.isHidden,
+           let frontmostPath = frontmostApp.bundleURL?.path {
+            topApps.append(frontmostPath)
+        }
+        
+        // Add other visible apps sorted by recent activity
+        let otherApps = workspace.runningApplications
             .filter { app in
                 guard app.activationPolicy == .regular,
                       !app.isHidden,
-                      app.bundleURL != nil else { return false }
-                return true
+                      let bundlePath = app.bundleURL?.path else { return false }
+                // Don't include frontmost app again
+                return !topApps.contains(bundlePath)
             }
             .sorted { app1, app2 in
-                // Sort by PID as proxy for launch order (newer apps have higher PIDs)
+                // Sort by PID as rough proxy for recency
                 return app1.processIdentifier > app2.processIdentifier
             }
-            .prefix(config.topN)
+            .prefix(config.topN - topApps.count)
             .compactMap { $0.bundleURL?.path }
         
-        return Array(runningApps)
+        topApps.append(contentsOf: otherApps)
+        return Array(topApps.prefix(config.topN))
     }
 
 
