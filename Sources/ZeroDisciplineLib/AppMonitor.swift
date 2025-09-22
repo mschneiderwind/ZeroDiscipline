@@ -78,6 +78,35 @@ public class MonitoredAppStatus {
                    bundlePath.contains(appName)
         }
     }
+    
+    /// Terminate this app and all related processes
+    @discardableResult
+    public func terminate() -> Bool {
+        let processes = findRelatedProcesses()
+        guard !processes.isEmpty else {
+            print("⚠️ \(displayName()) not running")
+            return false
+        }
+        
+        print("🎯 Terminating \(displayName()) (\(processes.count) processes)")
+        
+        // Terminate all processes
+        for process in processes {
+            process.terminate()
+        }
+        
+        // Wait briefly and force-kill any survivors
+        Thread.sleep(forTimeInterval: 1.0)
+        let survivors = findRelatedProcesses()
+        if !survivors.isEmpty {
+            print("💥 Force-killing \(survivors.count) stubborn processes")
+            for survivor in survivors {
+                survivor.forceTerminate()
+            }
+        }
+        
+        return findRelatedProcesses().isEmpty
+    }
 }
 
 /// Main application monitoring service
@@ -112,7 +141,6 @@ public class AppMonitor: ObservableObject {
         }
     }
 
-    // Note: Timer cleanup handled by ARC
 
 
     // MARK: - Private Methods
@@ -142,8 +170,8 @@ public class AppMonitor: ObservableObject {
 
         for app in monitoredApps {
             if app.shouldBeKilled() {
-                print("📊 App status before kill: \(app.displayName()) - lastUsed: \(app.lastUsed), timeInactive: \(app.timeInactive())s, shouldBeKilled: \(app.shouldBeKilled())")
-                quitApp(app: app)
+                print("📆 App status before kill: \(app.displayName()) - lastUsed: \(app.lastUsed), timeInactive: \(app.timeInactive())s, shouldBeKilled: \(app.shouldBeKilled())")
+                app.terminate()
             }
         }
         let countdownSummary = monitoredApps.compactMap { app -> String? in
@@ -185,78 +213,6 @@ public class AppMonitor: ObservableObject {
 
 
 
-    @discardableResult
-    private func quitApp(app: MonitoredAppStatus) -> Bool {
-        let relatedProcesses = app.findRelatedProcesses()
-        guard !relatedProcesses.isEmpty else {
-            print("⚠️ App \(app.displayName()) not found or not running")
-            return false
-        }
-
-        let appName = app.displayName()
-        print("🎯 Terminating \(appName) (\(relatedProcesses.count) processes)")
-        
-        // Try graceful termination first on main processes
-        var mainProcesses = relatedProcesses.filter { $0.activationPolicy == .regular }
-        if mainProcesses.isEmpty {
-            mainProcesses = [relatedProcesses.first!] // At least one process
-        }
-        
-        var allTerminated = true
-        for process in mainProcesses {
-            let success = process.terminate()
-            if !success {
-                print("⚠️ Failed to terminate process \(process.processIdentifier)")
-                allTerminated = false
-            }
-        }
-
-        // Wait for graceful termination (shorter timeout since we kill all processes)
-        let gracePeriod: TimeInterval = 2.0
-        let startTime = Date()
-        
-        if allTerminated {
-            print("✅ Graceful termination initiated, waiting for cleanup...")
-            
-            while Date().timeIntervalSince(startTime) < gracePeriod {
-                let remainingProcesses = app.findRelatedProcesses()
-                if remainingProcesses.isEmpty {
-                    print("✅ \(appName) fully terminated after \(String(format: "%.1f", Date().timeIntervalSince(startTime)))s")
-                    return true
-                }
-                Thread.sleep(forTimeInterval: 0.1)
-            }
-        }
-        
-        // Force terminate any remaining processes
-        let stubornProcesses = app.findRelatedProcesses()
-        if !stubornProcesses.isEmpty {
-            print("💥 \(appName) has \(stubornProcesses.count) stubborn processes, force terminating...")
-            
-            for process in stubornProcesses {
-                let forceSuccess = process.forceTerminate()
-                if forceSuccess {
-                    print("✅ Force terminated PID \(process.processIdentifier)")
-                } else {
-                    print("⚠️ Failed to force terminate PID \(process.processIdentifier)")
-                }
-            }
-            
-            // Final check after force termination
-            Thread.sleep(forTimeInterval: 0.5)
-            let finalProcesses = app.findRelatedProcesses()
-            if finalProcesses.isEmpty {
-                print("✅ \(appName) force terminated after \(String(format: "%.1f", Date().timeIntervalSince(startTime)))s total")
-                return true
-            } else {
-                print("⚠️ \(appName) still has \(finalProcesses.count) unkillable processes")
-                return false
-            }
-        }
-        
-        print("⚠️ \(appName) couldn't be terminated, giving up")
-        return false
-    }
 }
 
 // MARK: - Extensions for status display in UI
