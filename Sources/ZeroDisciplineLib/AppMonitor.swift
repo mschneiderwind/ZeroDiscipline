@@ -1,5 +1,5 @@
-import Foundation
 import AppKit
+import Foundation
 
 /// Status of a monitored application
 public class MonitoredAppStatus {
@@ -12,7 +12,7 @@ public class MonitoredAppStatus {
         self.appPath = appPath
         self.config = config
     }
-    
+
     public func timeInactive() -> TimeInterval {
         return Date().timeIntervalSince(lastUsed)
     }
@@ -26,17 +26,18 @@ public class MonitoredAppStatus {
         return isRunning() && timeInactive() >= Double(config.inactivityDelay)
     }
 
-
     public func isRunning() -> Bool {
         return findRunningApp() != nil
     }
 
     public func displayName() -> String {
         if let app = findRunningApp(),
-           let name = app.localizedName {
+            let name = app.localizedName
+        {
             return name
         }
-        return URL(fileURLWithPath: appPath).lastPathComponent.replacingOccurrences(of: ".app", with: "")
+        return URL(fileURLWithPath: appPath).lastPathComponent.replacingOccurrences(
+            of: ".app", with: "")
     }
 
     public func findRunningApp() -> NSRunningApplication? {
@@ -51,16 +52,21 @@ public class MonitoredAppStatus {
     public func getLastUsedWithLaunchDate() -> Date {
         let currentDate = Date()
         guard let runningApp = findRunningApp(),
-              let launchDate = runningApp.launchDate else {
+            let launchDate = runningApp.launchDate
+        else {
             print("🔍 \(displayName()): No running app found or no launchDate, using currentDate")
             return currentDate
         }
-        
+
         let age = currentDate.timeIntervalSince(launchDate)
-        print("🔍 \(displayName()): Found PID=\(runningApp.processIdentifier), launchDate=\(launchDate), age=\(Int(age))s")
-        
+        print(
+            "🔍 \(displayName()): Found PID=\(runningApp.processIdentifier), launchDate=\(launchDate), age=\(Int(age))s"
+        )
+
         let result = max(currentDate, launchDate)
-        print("🔍 \(displayName()): Using \(result == currentDate ? "currentDate" : "launchDate") as lastUsed")
+        print(
+            "🔍 \(displayName()): Using \(result == currentDate ? "currentDate" : "launchDate") as lastUsed"
+        )
         return result
     }
 
@@ -68,17 +74,16 @@ public class MonitoredAppStatus {
     public func findRelatedProcesses() -> [NSRunningApplication] {
         let appName = URL(fileURLWithPath: appPath).deletingPathExtension().lastPathComponent
         let allApps = NSWorkspace.shared.runningApplications
-        
+
         return allApps.filter { app in
             guard let bundleURL = app.bundleURL else { return false }
             let bundlePath = bundleURL.path
-            
+
             // Include if bundle path contains our app name or is inside our app bundle
-            return bundlePath.hasPrefix(appPath) || 
-                   bundlePath.contains(appName)
+            return bundlePath.hasPrefix(appPath) || bundlePath.contains(appName)
         }
     }
-    
+
     /// Terminate this app and all related processes (non-blocking)
     public func terminate() {
         let processes = findRelatedProcesses()
@@ -86,20 +91,20 @@ public class MonitoredAppStatus {
             print("⚠️ \(displayName()) not running")
             return
         }
-        
+
         print("🎯 Terminating \(displayName()) (\(processes.count) processes)")
-        
+
         // Terminate all processes immediately
         for process in processes {
             process.terminate()
         }
-        
+
         // Schedule force-kill after 1 second (non-blocking)
         let appPath = self.appPath
         let displayName = self.displayName()
         Task.detached {
             try? await Task.sleep(for: .seconds(1))
-            
+
             // Re-find processes after delay (they might have changed)
             let workspace = NSWorkspace.shared
             let appName = URL(fileURLWithPath: appPath).deletingPathExtension().lastPathComponent
@@ -108,7 +113,7 @@ public class MonitoredAppStatus {
                 let bundlePath = bundleURL.path
                 return bundlePath.hasPrefix(appPath) || bundlePath.contains(appName)
             }
-            
+
             if !survivors.isEmpty {
                 print("💥 Force-killing \(survivors.count) stubborn processes for \(displayName)")
                 for survivor in survivors {
@@ -133,7 +138,9 @@ public class AppMonitor: ObservableObject {
         self.config = config
 
         print("🎯 Zero Discipline started - monitoring \(config.appPaths.count) apps")
-        print("⏰ Settings: \(config.inactivityDelay)s inactivity delay, keep top \(config.topN) apps in-use")
+        print(
+            "⏰ Settings: \(config.inactivityDelay)s inactivity delay, keep top \(config.topN) apps in-use"
+        )
 
         let currentDate = Date()
         for appPath in config.appPaths {
@@ -150,15 +157,17 @@ public class AppMonitor: ObservableObject {
                 self.runMonitoringCycle()
             }
         }
-        
+
         // Listen for app activation changes
         NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.didActivateApplicationNotification,
             object: nil,
             queue: .main
         ) { [weak self] notification in
-            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-               let bundlePath = app.bundleURL?.path {
+            if let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey]
+                as? NSRunningApplication,
+                let bundlePath = app.bundleURL?.path
+            {
                 Task { @MainActor in
                     self?.lastFrontmostApp = bundlePath
                 }
@@ -166,10 +175,7 @@ public class AppMonitor: ObservableObject {
         }
     }
 
-
-
     // MARK: - Private Methods
-
 
     private func runMonitoringCycle() {
         let topNApps = getTopNApps()
@@ -195,7 +201,9 @@ public class AppMonitor: ObservableObject {
 
         for app in monitoredApps {
             if app.shouldBeKilled() {
-                print("📆 App status before kill: \(app.displayName()) - lastUsed: \(app.lastUsed), timeInactive: \(app.timeInactive())s, shouldBeKilled: \(app.shouldBeKilled())")
+                print(
+                    "📆 App status before kill: \(app.displayName()) - lastUsed: \(app.lastUsed), timeInactive: \(app.timeInactive())s, shouldBeKilled: \(app.shouldBeKilled())"
+                )
                 app.terminate()
             }
         }
@@ -214,26 +222,27 @@ public class AppMonitor: ObservableObject {
         objectWillChange.send()
     }
 
-
     private func getTopNApps() -> [String] {
         // Get frontmost app first
         let workspace = NSWorkspace.shared
         var topApps: [String] = []
-        
+
         // Add frontmost app first
         if let frontmostApp = workspace.frontmostApplication,
-           frontmostApp.activationPolicy == .regular,
-           !frontmostApp.isHidden,
-           let frontmostPath = frontmostApp.bundleURL?.path {
+            frontmostApp.activationPolicy == .regular,
+            !frontmostApp.isHidden,
+            let frontmostPath = frontmostApp.bundleURL?.path
+        {
             topApps.append(frontmostPath)
         }
-        
+
         // Add other visible apps sorted by recent activity
         let otherApps = workspace.runningApplications
             .filter { app in
                 guard app.activationPolicy == .regular,
-                      !app.isHidden,
-                      let bundlePath = app.bundleURL?.path else { return false }
+                    !app.isHidden,
+                    let bundlePath = app.bundleURL?.path
+                else { return false }
                 // Don't include frontmost app again
                 return !topApps.contains(bundlePath)
             }
@@ -243,13 +252,10 @@ public class AppMonitor: ObservableObject {
             }
             .prefix(config.topN - topApps.count)
             .compactMap { $0.bundleURL?.path }
-        
+
         topApps.append(contentsOf: otherApps)
         return Array(topApps.prefix(config.topN))
     }
-
-
-
 
 }
 
@@ -279,4 +285,3 @@ extension MonitoredAppStatus {
         }
     }
 }
-
