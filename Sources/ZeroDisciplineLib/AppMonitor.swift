@@ -79,33 +79,43 @@ public class MonitoredAppStatus {
         }
     }
     
-    /// Terminate this app and all related processes
-    @discardableResult
-    public func terminate() -> Bool {
+    /// Terminate this app and all related processes (non-blocking)
+    public func terminate() {
         let processes = findRelatedProcesses()
         guard !processes.isEmpty else {
             print("⚠️ \(displayName()) not running")
-            return false
+            return
         }
         
         print("🎯 Terminating \(displayName()) (\(processes.count) processes)")
         
-        // Terminate all processes
+        // Terminate all processes immediately
         for process in processes {
             process.terminate()
         }
         
-        // Wait briefly and force-kill any survivors
-        Thread.sleep(forTimeInterval: 1.0)
-        let survivors = findRelatedProcesses()
-        if !survivors.isEmpty {
-            print("💥 Force-killing \(survivors.count) stubborn processes")
-            for survivor in survivors {
-                survivor.forceTerminate()
+        // Schedule force-kill after 1 second (non-blocking)
+        let appPath = self.appPath
+        let displayName = self.displayName()
+        Task.detached {
+            try? await Task.sleep(for: .seconds(1))
+            
+            // Re-find processes after delay (they might have changed)
+            let workspace = NSWorkspace.shared
+            let appName = URL(fileURLWithPath: appPath).deletingPathExtension().lastPathComponent
+            let survivors = workspace.runningApplications.filter { app in
+                guard let bundleURL = app.bundleURL else { return false }
+                let bundlePath = bundleURL.path
+                return bundlePath.hasPrefix(appPath) || bundlePath.contains(appName)
+            }
+            
+            if !survivors.isEmpty {
+                print("💥 Force-killing \(survivors.count) stubborn processes for \(displayName)")
+                for survivor in survivors {
+                    survivor.forceTerminate()
+                }
             }
         }
-        
-        return findRelatedProcesses().isEmpty
     }
 }
 
