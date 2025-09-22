@@ -26,12 +26,8 @@ public class ConfigurationManager: ObservableObject {
     
     public init(configPath: String? = nil) {
         // Use the same config.json as the Python version by default
-        if let configPath = configPath {
-            self.configURL = URL(fileURLWithPath: configPath)
-        } else {
-            let currentDir = FileManager.default.currentDirectoryPath
-            self.configURL = URL(fileURLWithPath: currentDir).appendingPathComponent("config.json")
-        }
+        self.configURL = configPath.map(URL.init(fileURLWithPath:)) ?? 
+                        URL.currentDirectory().appendingPathComponent("config.json")
         
         self.config = Self.loadConfig(from: configURL)
     }
@@ -61,13 +57,13 @@ public class ConfigurationManager: ObservableObject {
     }
     
     func addApp(path: String) {
-        guard !config.appPaths.contains(path) && !path.isEmpty else { return }
+        guard !path.isEmpty, !config.appPaths.contains(path) else { return }
         config.appPaths.append(path)
         saveConfig()
     }
     
     func removeApp(path: String) {
-        config.appPaths.removeAll { $0 == path }
+        config.appPaths.removeAll(where: { $0 == path })
         saveConfig()
     }
     
