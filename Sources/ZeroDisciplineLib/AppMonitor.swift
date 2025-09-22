@@ -1,6 +1,5 @@
 import Foundation
 import AppKit
-import ScreenCaptureKit
 
 /// Status of a monitored application
 public class MonitoredAppStatus {
@@ -41,7 +40,6 @@ public class MonitoredAppStatus {
     }
 
     public func findRunningApp() -> NSRunningApplication? {
-        // TODO: MODERNIZE - Could cache this lookup or use NSWorkspace notifications
         let workspace = NSWorkspace.shared
         return workspace.runningApplications.first { app in
             guard let bundleURL = app.bundleURL, !app.isHidden else { return false }
@@ -67,7 +65,6 @@ public class MonitoredAppStatus {
     }
 
     /// Find all processes related to this app (main + extensions/services)
-    /// TODO: MODERNIZE - Could use macOS 15 process groups API for better detection
     public func findRelatedProcesses() -> [NSRunningApplication] {
         let appName = URL(fileURLWithPath: appPath).deletingPathExtension().lastPathComponent
         let allApps = NSWorkspace.shared.runningApplications
@@ -108,7 +105,6 @@ public class AppMonitor: ObservableObject {
             appStatus.lastUsed = appStatus.getLastUsedWithLaunchDate()
             monitoredApps.append(appStatus)
         }
-        // TODO: MODERNIZE - Replace polling with NSWorkspace notifications for better efficiency
         monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
             Task { @MainActor in
                 self.runMonitoringCycle()
@@ -167,17 +163,7 @@ public class AppMonitor: ObservableObject {
 
 
     private func getTopNApps() -> [String] {
-        // Use modern NSWorkspace approach for better app detection
-        if #available(macOS 15.0, *) {
-            return getTopNAppsModern()
-        } else {
-            return getTopNAppsLegacy()
-        }
-    }
-    
-    @available(macOS 15.0, *)
-    private func getTopNAppsModern() -> [String] {
-        // Modern approach using improved NSWorkspace APIs
+        // Modern NSWorkspace approach - clean and simple
         let workspace = NSWorkspace.shared
         let runningApps = workspace.runningApplications
             .filter { app in
@@ -187,67 +173,20 @@ public class AppMonitor: ObservableObject {
                 return true
             }
             .sorted { app1, app2 in
-                // Sort by activation order (more recent first)
-                // This is a simplified approximation - real implementation would track focus events
-                return (app1.processIdentifier > app2.processIdentifier)
+                // Sort by PID as proxy for launch order (newer apps have higher PIDs)
+                return app1.processIdentifier > app2.processIdentifier
             }
             .prefix(config.topN)
             .compactMap { $0.bundleURL?.path }
         
         return Array(runningApps)
     }
-    
-    private func getTopNAppsLegacy() -> [String] {
-        // Fallback to old CGWindowListCopyWindowInfo method
-        guard let windowList = CGWindowListCopyWindowInfo(
-            [.optionOnScreenOnly, .excludeDesktopElements],
-            kCGNullWindowID
-        ) as? [[String: Any]] else {
-            return []
-        }
 
-        var seenPIDs = Set<pid_t>()
-        var orderedAppPaths: [String] = []
-
-        for window in windowList {
-            guard let pid = window[kCGWindowOwnerPID as String] as? pid_t,
-                  !seenPIDs.contains(pid),
-                  let app = NSRunningApplication(processIdentifier: pid),
-                  let bundlePath = app.bundleURL?.path,
-                  isValidUserApp(app: app, window: window) else { continue }
-
-            orderedAppPaths.append(bundlePath)
-            seenPIDs.insert(pid)
-
-            if orderedAppPaths.count >= self.config.topN { break }
-        }
-
-        return orderedAppPaths
-    }
-
-    private func isValidUserApp(app: NSRunningApplication, window: [String: Any]) -> Bool {
-        // Enhanced validation with modern app properties
-        guard app.activationPolicy == .regular else { return false }
-        guard !app.isHidden else { return false }
-        
-        // Note: Modern execution state APIs would go here when available
-
-        let windowLayer = window[kCGWindowLayer as String] as? Int ?? 0
-        guard windowLayer == 0 else { return false }
-
-        guard let bounds = window[kCGWindowBounds as String] as? [String: Any],
-              let width = bounds["Width"] as? Double,
-              let height = bounds["Height"] as? Double,
-              width > 50 && height > 50 else { return false }
-
-        return true
-    }
 
 
 
     @discardableResult
     private func quitApp(app: MonitoredAppStatus) -> Bool {
-        // Modern approach: terminate all related processes for better cleanup
         let relatedProcesses = app.findRelatedProcesses()
         guard !relatedProcesses.isEmpty else {
             print("⚠️ App \(app.displayName()) not found or not running")
