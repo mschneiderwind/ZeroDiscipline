@@ -1,52 +1,75 @@
-.PHONY: build run clean test
+.PHONY: run clean test dmg version
 
-# Build the Swift app
-build:
-	swift build -c release
-
-# Run the app in debug mode
+# Run in debug mode
 run:
 	swift run
-
-# Run the app in release mode
-run-release:
-	swift run -c release
 
 # Clean build artifacts
 clean:
 	swift package clean
+	@rm -rf dist/
+
+# Show next version (CalVer)
+version:
+	@today=$$(date +"%Y.%m.%d"); \
+	existing=$$(git tag -l "$$today*" | wc -l | tr -d ' '); \
+	if [ $$existing -eq 0 ]; then \
+		echo "Next version: $$today"; \
+	else \
+		echo "Next version: $$today.$$existing"; \
+	fi
 
 # Run tests
 test:
 	swift test
 
-# Build and install in /usr/local/bin (requires sudo)
-install: build
-	sudo cp .build/release/ZeroDisciplineSwift /usr/local/bin/zero-discipline-swift
+# Create DMG for distribution
+dmg:
+	@echo "Building project..."
+	@swift build -c release
+	@echo "Creating app bundle..."
+	@rm -rf dist/ZeroDiscipline.app
+	@mkdir -p dist/ZeroDiscipline.app/Contents/MacOS
+	@mkdir -p dist/ZeroDiscipline.app/Contents/Resources
+	@cp .build/release/ZeroDiscipline dist/ZeroDiscipline.app/Contents/MacOS/
+	@cp Sources/Info.plist dist/ZeroDiscipline.app/Contents/
+	@chmod +x dist/ZeroDiscipline.app/Contents/MacOS/ZeroDiscipline
+	@echo "Creating DMG..."
+	@rm -rf dist/dmg-staging
+	@mkdir -p dist/dmg-staging
+	@cp -R dist/ZeroDiscipline.app dist/dmg-staging/
+	@cp README.md dist/dmg-staging/
+	@cp config.json.example dist/dmg-staging/
+	@ln -s /Applications dist/dmg-staging/Applications
+	@rm -f dist/ZeroDiscipline.dmg
+	@hdiutil create -volname "Zero Discipline" \
+		-srcfolder dist/dmg-staging \
+		-ov -format UDZO \
+		-imagekey zlib-level=9 \
+		dist/ZeroDiscipline.dmg
+	@echo "✅ DMG created at dist/ZeroDiscipline.dmg"
 
-# Create a simple app bundle (for development)
-app-bundle: build
-	mkdir -p ZeroDiscipline.app/Contents/MacOS
-	mkdir -p ZeroDiscipline.app/Contents/Resources
-	cp .build/release/ZeroDisciplineSwift ZeroDiscipline.app/Contents/MacOS/
-	cp Sources/ZeroDisciplineSwift/Info.plist ZeroDiscipline.app/Contents/
-	
-# Open the app bundle
-open-app: app-bundle
-	open ZeroDiscipline.app
-
-# Build for distribution (optimized)
-release: clean
-	swift build -c release --arch arm64 --arch x86_64
+# Create GitHub release with DMG (CalVer: YYYY.MM.DD)
+release: dmg
+	@echo "Creating GitHub release with Calendar Versioning..."
+	@today=$$(date +"%Y.%m.%d"); \
+		existing=$$(git tag -l "$$today*" | wc -l | tr -d ' '); \
+		if [ $$existing -eq 0 ]; then \
+			version="$$today"; \
+		else \
+			version="$$today.$$existing"; \
+		fi; \
+		echo "Version will be: $$version"; \
+		read -p "Enter release notes: " notes; \
+		git tag $$version; \
+		git push --tags; \
+		gh release create $$version dist/ZeroDiscipline.dmg --title "$$version" --notes "$$notes"
 
 help:
-	@echo "Available targets:"
-	@echo "  build       - Build the project"
-	@echo "  run         - Run the project in debug mode" 
-	@echo "  run-release - Run the project in release mode"
-	@echo "  clean       - Clean build artifacts"
-	@echo "  test        - Run tests"
-	@echo "  install     - Install to /usr/local/bin (requires sudo)"
-	@echo "  app-bundle  - Create a basic .app bundle"
-	@echo "  open-app    - Create and open the .app bundle"
-	@echo "  release     - Build optimized universal binary"
+	@echo "Available commands:"
+	@echo "  run        - Run in debug mode"
+	@echo "  test       - Run tests"
+	@echo "  clean      - Clean all artifacts"
+	@echo "  version    - Show next CalVer version (YYYY.MM.DD)"
+	@echo "  dmg        - Create DMG for distribution"
+	@echo "  release    - Create GitHub release with CalVer"

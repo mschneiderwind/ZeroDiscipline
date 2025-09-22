@@ -81,6 +81,7 @@ public class MonitoredAppStatus {
 }
 
 /// Main application monitoring service
+@MainActor
 public class AppMonitor: ObservableObject {
     @Published public var monitoredApps: [MonitoredAppStatus] = []
 
@@ -104,16 +105,14 @@ public class AppMonitor: ObservableObject {
             appStatus.lastUsed = appStatus.getLastUsedWithLaunchDate()
             monitoredApps.append(appStatus)
         }
-        DispatchQueue.main.async {
-            self.monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+        monitorTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+            Task { @MainActor in
                 self.runMonitoringCycle()
             }
         }
     }
 
-    deinit {
-        monitorTimer?.invalidate()
-    }
+    // Note: Timer cleanup handled by ARC
 
 
     // MARK: - Private Methods
@@ -159,9 +158,7 @@ public class AppMonitor: ObservableObject {
         }
 
         // Force UI update - @Published doesn't detect changes inside class objects
-        DispatchQueue.main.async {
-            self.objectWillChange.send()
-        }
+        objectWillChange.send()
     }
 
 

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Configuration model for Zero Discipline
-public struct ZeroDisciplineConfig: Codable {
+public struct ZeroDisciplineConfig: Codable, Sendable {
     var appPaths: [String]  // Changed from apps to appPaths
     var inactivityDelay: Int  // Seconds before closing inactive app
     var topN: Int  // Number of most recently used apps to keep protected

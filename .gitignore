@@ -53,6 +53,9 @@ Icon
 # Logs
 *.log
 
+# Distribution artifacts
+dist/
+
 # Configuration files (keep example, ignore actual config)
 config.json
 !config.json.example

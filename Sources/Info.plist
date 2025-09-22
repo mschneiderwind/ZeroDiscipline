@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDisplayName</key>
+    <string>Zero Discipline</string>
+    <key>CFBundleExecutable</key>
+    <string>ZeroDiscipline</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.mschneiderwind.zerodiscipline</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>ZeroDiscipline</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>2025.09.22</string>
+    <key>CFBundleVersion</key>
+    <string>2025.09.22</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>15.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoads</key>
+        <false/>
+    </dict>
+    <key>NSHumanReadableCopyright</key>
+    <string>© 2025 Matthieu Schneiderwind. All rights reserved.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSAppleEventsUsageDescription</key>
+    <string>Zero Discipline needs to monitor and quit applications to help you stay focused.</string>
+    <key>NSSystemAdministrationUsageDescription</key>
+    <string>Zero Discipline needs permission to quit applications.</string>
+    <key>SUFeedURL</key>
+    <string>https://github.com/mschneiderwind/ZeroDiscipline/releases.atom</string>
+    <key>SUPublicEDKey</key>
+    <string>your-sparkle-public-key-here</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
+</dict>
+</plist>

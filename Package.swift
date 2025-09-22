@@ -1,20 +1,24 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.0
 import PackageDescription
 
 let package = Package(
     name: "ZeroDiscipline",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v15)],
     products: [
         .executable(
             name: "ZeroDiscipline",
             targets: ["ZeroDiscipline"]
         ),
     ],
-    dependencies: [],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.5.2")
+    ],
     targets: [
         .target(
             name: "ZeroDisciplineLib",
-            dependencies: []
+            dependencies: [
+                .product(name: "Sparkle", package: "Sparkle")
+            ]
         ),
         .executableTarget(
             name: "ZeroDiscipline",

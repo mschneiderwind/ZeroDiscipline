@@ -2,6 +2,7 @@ import Foundation
 import AppKit
 import SwiftUI
 
+@MainActor
 public class SystemTrayManager {
     private var statusItem: NSStatusItem?
     private let configManager: ConfigurationManager
@@ -14,9 +15,7 @@ public class SystemTrayManager {
         setupSystemTray()
     }
     
-    deinit {
-        statusItem = nil
-    }
+    // Note: NSStatusItem cleanup handled by ARC
     
     private func setupSystemTray() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
